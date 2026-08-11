@@ -871,7 +871,7 @@ function getExportRows(){
     const locs=p.locs||{}, total=LOCS.reduce((s,l)=>s+(locs[l]||0),0);
     const row={'部品番号':p.no||'','部品名':p.name||''};
     LOCS.forEach(l=>{row[l]=locs[l]||0;}); row['合計']=total; row['最終更新']=fmtDate(p.updatedAt);
-  2 return row;
+    return row;
   });
 }
 function exportCSV(){
