@@ -431,7 +431,7 @@ tr:hover td { background: #f8fafc; }
     <div class="field"><label>または部品番号を直接入力</label>
       <input type="text" id="bc-manual" placeholder="例: 61026-07" onkeydown="if(event.key==='Enter')lookupBarcode(id('bc-manual').value)" />
     </div>
-    <button class="btn btn-outline" style="width:100%;margin-top:6px;" onclick="lookupBarcode(id('bc-manual').value)">この番号c��検索</button>
+    <button class="btn btn-outline" style="width:100%;margin-top:6px;" onclick="lookupBarcode(id('bc-manual').value)">この番号で検索</button>
     <div id="bc-result" style="margin-top:14px;"></div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="stopBcScan();closeOv('ov-bc')">閉じる</button>
@@ -716,7 +716,7 @@ function doTransfer(){
   if(from===to){toast('移動元と移動先が同じです');return;}
   if(qty<=0){toast('数量を入力してください');return;}
   const p=parts[key], fq=(p.locs||{})[from]||0;
-  if(qty>fq){toast(`${from=の在庫が不足（現在: ${fq}）`);return;}
+  if(qty>fq){toast(`${from}の在庫が不足（現在: ${fq}）`);return;}
   const tq=(p.locs||{})[to]||0;
   const upd={}; upd[`parts/${key}/locs/${from}`]=fq-qty; upd[`parts/${key}/locs/${to}`]=tq+qty; upd[`parts/${key}/updatedAt`]=Date.now();
   db.ref().update(upd);
@@ -1130,7 +1130,7 @@ function startBcScan(){
   bcScanner = new Html5Qrcode('bc-reader');
   const config = {
     fps: 10,
-  2 qrbox: { width: 250, height: 120 },
+    qrbox: { width: 250, height: 120 },
     formatsToSupport: [
       Html5QrcodeSupportedFormats.CODE_128,
       Html5QrcodeSupportedFormats.CODE_39,
