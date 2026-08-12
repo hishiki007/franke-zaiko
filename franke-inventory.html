@@ -170,6 +170,7 @@ tr:hover td { background: #f8fafc; }
     <span class="dot" id="dot"></span>
     <button class="btn btn-ghost btn-sm" onclick="openOperatorModal()">👤 <span id="cur-op-label">未選択</span></button>
     <button class="btn btn-ghost btn-sm" onclick="toggleHist()">全履歴</button>
+    <button class="btn btn-ghost btn-sm" onclick="openApiKeyModal()">🔑</button>
     <button class="btn btn-ghost btn-sm" onclick="doLogout()">設定</button>
   </div>
 </header>
@@ -417,6 +418,18 @@ tr:hover td { background: #f8fafc; }
   </div>
 </div>
 
+<div class="overlay" id="ov-apikey" onclick="closeOv('ov-apikey',event)">
+  <div class="modal-card" onclick="event.stopPropagation()">
+    <h3 style="margin-bottom:12px;">🔑 Anthropic APIキー設定</h3>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">AIスキャン機能に使用します。キーはこの端末のみに保存され、外部には送信されません。</p>
+    <input type="password" id="apikey-input" placeholder="sk-ant-api03-..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px;">
+    <div id="apikey-status" style="font-size:13px;margin-bottom:12px;"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-primary" style="flex:1;" onclick="saveApiKey()">保存</button>
+      <button class="btn btn-outline" style="flex:1;" onclick="closeOv('ov-apikey')">キャンセル</button>
+    </div>
+  </div>
+</div>
 <!-- バーコードスキャン -->
 <div class="overlay" id="ov-bc" onclick="closeOv('ov-bc',event)">
   <div class="modal" style="max-width:420px;">
@@ -1210,6 +1223,24 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 function fmtDate(ts){if(!ts)return'—';const d=new Date(ts);return d.toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});}
 function today(){const d=new Date();return`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;}
 function open_(ovId){id(ovId).classList.add('open');}
+function openApiKeyModal(){
+  const cur=localStorage.getItem('anthropic_key')||'';
+  const inp=id('apikey-input');
+  inp.value=cur;
+  const st=id('apikey-status');
+  st.textContent=cur?'✅ 現在キーが設定されています':'⚠️ キーが未設定です（AIスキャン機能は使用できません）';
+  st.style.color=cur?'var(--success)':'var(--warning)';
+  open_('ov-apikey');
+  setTimeout(()=>inp.focus(),100);
+}
+function saveApiKey(){
+  const val=id('apikey-input').value.trim();
+  if(!val){localStorage.removeItem('anthropic_key');toast('🔑 APIキーを削除しました');closeOv('ov-apikey');return;}
+  if(!val.startsWith('sk-ant-')){toast('⚠️ キーの形式が正しくありません（sk-ant-で始まる必要があります）');return;}
+  localStorage.setItem('anthropic_key',val);
+  toast('✅ APIキーを保存しました');
+  closeOv('ov-apikey');
+}
 function closeOv(ovId,e){
   if(!e||e.target===id(ovId)){
     id(ovId).classList.remove('open');
