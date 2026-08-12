@@ -1,0 +1,16 @@
+{
+  "name": "フランケ部品在庫管理",
+  "short_name": "フランケ在庫",
+  "start_url": "./franke-inventory.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0e7490",
+  "icons": [
+    {
+      "src": "./icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
