@@ -198,7 +198,7 @@ tr:hover td { background: #f8fafc; }
 <div id="app">
   <div style="position:-webkit-sticky;position:sticky;top:56px;z-index:99;background:var(--card);box-shadow:0 2px 6px rgba(0,0,0,0.08);">
   <div class="toolbar">
-    <input class="search" id="q" type="search" placeholder="🔍 部品名・部品番号で検索..." oninput="render()" />
+    <input class="search" id="q" type="search" placeholder="🔍 部品名・部品番号・バーコードで検索..." oninput="render()" />
     <button class="btn btn-primary" onclick="openAdd()">＋ 部品追加</button>
     <button class="btn btn-warning" onclick="openTransfer()">↔ 移動</button>
     <button class="btn btn-outline" onclick="exportCSV()">CSV出力</button>
@@ -266,6 +266,7 @@ tr:hover td { background: #f8fafc; }
       <div class="field"><label>部品番号</label><input id="p-no" placeholder="例: 61026-07" /></div>
       <div class="field"><label>部品名 *</label><input id="p-name" placeholder="例: ポンプ" /></div>
     </div>
+    <div class="field"><label>バーコード番号</label><input id="p-barcode" inputmode="text" autocapitalize="off" placeholder="例: 560.0002.353" /></div>
     <div style="margin-top:4px;">
       <p style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:10px;" id="loc-label">各保管場所の初期数量</p>
       <div class="row2" id="loc-inputs"></div>
@@ -437,7 +438,8 @@ tr:hover td { background: #f8fafc; }
 <!-- バーコードスキャン -->
 <div class="overlay" id="ov-bc" onclick="closeOv('ov-bc',event)">
   <div class="modal" style="max-width:420px;">
-    <h3>📱 バーコードスキャン（部品番号）</h3>
+    <h3>📱 バーコードスキャン</h3>
+    <div style="font-size:12px;color:var(--muted);margin:-4px 0 10px;line-height:1.5;">バーコードを横向きにし、枠いっぱいに映してください。ピントが合うまで少し静止します。</div>
     <div id="bc-reader" style="width:100%;margin-bottom:12px;border-radius:10px;overflow:hidden;"></div>
     <div style="display:flex;gap:8px;margin-bottom:10px;">
       <button class="btn btn-primary" style="flex:1;" id="bc-cam-btn" onclick="startBcScan()">📷 カメラを起動</button>
@@ -445,8 +447,8 @@ tr:hover td { background: #f8fafc; }
     </div>
     <label class="btn btn-success" style="display:block;text-align:center;cursor:pointer;margin-bottom:10px;" for="bc-photo-input">🖼 写真から読み取る（読み取れない時はこちら）</label>
     <input type="file" id="bc-photo-input" accept="image/*" capture="environment" style="display:none" onchange="onBcPhotoSelect(event)" />
-    <div class="field"><label>または部品番号を直接入力</label>
-      <input type="text" id="bc-manual" placeholder="例: 61026-07" onkeydown="if(event.key==='Enter')lookupBarcode(id('bc-manual').value)" />
+    <div class="field"><label>または部品番号／バーコード番号を直接入力</label>
+      <input type="text" id="bc-manual" placeholder="例: 1H326129 / 560.0002.353" onkeydown="if(event.key==='Enter')lookupBarcode(id('bc-manual').value)" />
     </div>
     <button class="btn btn-outline" style="width:100%;margin-top:6px;" onclick="lookupBarcode(id('bc-manual').value)">この番号で検索</button>
     <div id="bc-result" style="margin-top:14px;"></div>
@@ -563,7 +565,7 @@ function render(){
   const q=id('q').value.toLowerCase();
   let rows=Object.entries(parts).map(([k,p])=>({k,...p}));
   if(curLoc!=='all' && !q) rows=rows.filter(r=>r.locs&&(r.locs[curLoc]||0)>0);
-  if(q) rows=rows.filter(r=>(r.name||'').toLowerCase().includes(q)||(r.no||'').toLowerCase().includes(q));
+  if(q) rows=rows.filter(r=>(r.name||'').toLowerCase().includes(q)||(r.no||'').toLowerCase().includes(q)||(r.barcode||'').toLowerCase().includes(q));
 
   rows.sort((a,b)=>{
     if(a.k===lastOpKey) return -1;
@@ -585,7 +587,7 @@ function render(){
       ? `<img src="${photos[0]}" onclick="openPhotoModal('${r.k}')" style="width:36px;height:36px;object-fit:cover;border-radius:5px;border:1px solid var(--border);margin-right:6px;vertical-align:middle;cursor:pointer;flex-shrink:0;" />`
       : (supabaseUrl ? `<span onclick="openPhotoModal('${r.k}')" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:5px;border:1px dashed var(--border);background:var(--bg);font-size:16px;margin-right:6px;cursor:pointer;vertical-align:middle;flex-shrink:0;">📷</span>` : '');
     return `<tr id="row-${r.k}" style="${isLast?'background:#ecfeff;border-left:3px solid var(--primary);':''}">
-      <td style="font-family:monospace;font-size:12px;color:var(--muted);">${esc(r.no||'—')}</td>
+      <td style="font-family:monospace;font-size:12px;color:var(--muted);">${esc(r.no||'—')}${r.barcode?`<div style="font-size:10px;margin-top:3px;">▥ ${esc(r.barcode)}</div>`:''}</td>
       <td style="font-weight:600;"><div style="display:flex;align-items:center;">${thumb}<span>${esc(r.name||'')}${isLast?` <span style="font-size:11px;background:#cffafe;color:var(--primary);padding:1px 6px;border-radius:999px;margin-left:4px;">操作済</span>`:''}</span></div></td>
       <td>${locCell}</td>
       <td><span class="qty-cell ${total===0?'zero':''}">${total}</span></td>
@@ -600,14 +602,14 @@ function render(){
 }
 
 function openAdd(){
-  id('part-title').textContent='部品を追加'; id('p-key').value=''; id('p-no').value=''; id('p-name').value='';
+  id('part-title').textContent='部品を追加'; id('p-key').value=''; id('p-no').value=''; id('p-name').value=''; id('p-barcode').value='';
   id('loc-label').textContent='各保管場所の初期数量';
   buildLocInputs({});
   open_('ov-part');
 }
 function openEdit(key){
   const p=parts[key]; if(!p)return;
-  id('part-title').textContent='部品を編集'; id('p-key').value=key; id('p-no').value=p.no||''; id('p-name').value=p.name||'';
+  id('part-title').textContent='部品を編集'; id('p-key').value=key; id('p-no').value=p.no||''; id('p-name').value=p.name||''; id('p-barcode').value=p.barcode||'';
   id('loc-label').textContent='※ 在庫数の変更は「在庫変更」ボタンから';
   buildLocInputs(p.locs||{}, true);
   open_('ov-part');
@@ -618,7 +620,7 @@ function buildLocInputs(locs,disabled=false){
 function savePart(){
   const name=id('p-name').value.trim(); if(!name){toast('部品名は必須です');return;}
   const key=id('p-key').value;
-  const data={no:id('p-no').value.trim(), name, updatedAt:Date.now()};
+  const data={no:id('p-no').value.trim(), barcode:id('p-barcode').value.trim(), name, updatedAt:Date.now()};
   if(key){
     db.ref('parts/'+key).update(data);
     addHist('edit',key,name,'情報を更新');
@@ -688,6 +690,7 @@ function searchTrPart(){
   if(!q){updateTrPreview();return;}
   const match=Object.entries(parts).find(([k,p])=>
     (p.no||'').toLowerCase()===q ||
+    (p.barcode||'').toLowerCase()===q ||
     (p.no+' - '+p.name).toLowerCase()===q ||
     (p.name||'').toLowerCase()===q ||
     (p.no||'').toLowerCase().startsWith(q)
@@ -828,6 +831,7 @@ function parseImportCSV(text){
   const locIdx  = headers.findIndex(h=>h.includes('保管場所'));
   const qtyIdx  = headers.findIndex(h=>h==='数量'||h.includes('数量'));
   const noIdx   = headers.findLastIndex(h=>h.includes('部品番号'));
+  const barcodeIdx = headers.findIndex(h=>h.includes('バーコード'));
 
   if(nameIdx<0||locIdx<0||qtyIdx<0) return null;
 
@@ -839,11 +843,12 @@ function parseImportCSV(text){
     const loc  = cols[locIdx].trim().replace(/^"|"$/g,'');
     const qty  = parseInt(cols[qtyIdx])||0;
     const no   = noIdx>=0 ? cols[noIdx].trim().replace(/^"|"$/g,'') : '';
+    const barcode = barcodeIdx>=0 ? cols[barcodeIdx].trim().replace(/^"|"$/g,'') : '';
     if(!name || !LOCS.includes(loc)) continue;
 
     const key = no || name;
     if(!map[key]){
-      map[key] = { no, name, locs:{'シンワ倉庫':0,'青木':0,'平松':0}, updatedAt:Date.now(), createdAt:Date.now() };
+      map[key] = { no, barcode, name, locs:{'シンワ倉庫':0,'青木':0,'平松':0}, updatedAt:Date.now(), createdAt:Date.now() };
     }
     map[key].locs[loc] = qty;
   }
@@ -867,7 +872,9 @@ async function doCSVImport(){
   for(const p of entries){
     const existKey = existingMap[p.no]||existingMap[p.name];
     if(existKey){
-      await db.ref('parts/'+existKey).update({locs:p.locs, updatedAt:Date.now()});
+      const update={locs:p.locs, updatedAt:Date.now()};
+      if(p.barcode) update.barcode=p.barcode;
+      await db.ref('parts/'+existKey).update(update);
     } else {
       await db.ref('parts').push(p);
     }
@@ -886,7 +893,7 @@ async function doCSVImport(){
 function getExportRows(){
   return Object.values(parts).map(p=>{
     const locs=p.locs||{}, total=LOCS.reduce((s,l)=>s+(locs[l]||0),0);
-    const row={'部品番号':p.no||'','部品名':p.name||''};
+    const row={'部品番号':p.no||'','バーコード番号':p.barcode||'','部品名':p.name||''};
     LOCS.forEach(l=>{row[l]=locs[l]||0;}); row['合計']=total; row['最終更新']=fmtDate(p.updatedAt);
     return row;
   });
@@ -900,7 +907,7 @@ function exportCSV(){
 }
 function exportExcel(){
   const rows=getExportRows(); if(!rows.length){toast('データがありません');return;}
-  const ws=XLSX.utils.json_to_sheet(rows); ws['!cols']=[10,20,10,10,10,10,16].map(w=>({wch:w}));
+  const ws=XLSX.utils.json_to_sheet(rows); ws['!cols']=[14,18,24,10,10,10,10,16].map(w=>({wch:w}));
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'部品在庫');
   if(hist.length){
     const hd=hist.slice(0,500).map(h=>({'日時':fmtDate(h.ts),'操作':TYPE_LABELS[h.type]||h.type,'部品名':h.name||'','詳細':h.detail||'','備考':h.memo||''}));
@@ -1129,6 +1136,15 @@ function closeLightbox(){ id('lightbox').classList.remove('open'); id('lightbox-
 
 // ====== バーコードスキャン（html5-qrcode使用） ======
 let bcScanner = null;
+const BC_FORMATS = typeof Html5QrcodeSupportedFormats === 'undefined' ? [] : [
+  Html5QrcodeSupportedFormats.CODE_128,
+  Html5QrcodeSupportedFormats.CODE_39,
+  Html5QrcodeSupportedFormats.CODE_93,
+];
+
+function normalizeBarcode(value){
+  return String(value||'').trim().replace(/\s+/g,'').toUpperCase();
+}
 
 function openBarcode(){
   id('bc-result').innerHTML='';
@@ -1144,21 +1160,16 @@ function startBcScan(){
     toast('ライブラリ読み込み中です。少し待ってから再試行してください。');
     return;
   }
-  bcScanner = new Html5Qrcode('bc-reader');
+  id('bc-result').innerHTML='<div style="padding:10px;color:var(--muted);font-size:12px;">カメラを準備しています...</div>';
+  bcScanner = new Html5Qrcode('bc-reader', { formatsToSupport: BC_FORMATS }, false);
   const config = {
-    fps: 10,
-    qrbox: { width: 250, height: 120 },
-    formatsToSupport: [
-      Html5QrcodeSupportedFormats.CODE_128,
-      Html5QrcodeSupportedFormats.CODE_39,
-      Html5QrcodeSupportedFormats.CODE_93,
-      Html5QrcodeSupportedFormats.EAN_13,
-      Html5QrcodeSupportedFormats.EAN_8,
-      Html5QrcodeSupportedFormats.UPC_A,
-      Html5QrcodeSupportedFormats.UPC_E,
-      Html5QrcodeSupportedFormats.ITF,
-      Html5QrcodeSupportedFormats.QR_CODE,
-    ]
+    fps: 15,
+    qrbox: (viewfinderWidth, viewfinderHeight) => ({
+      width: Math.floor(viewfinderWidth * 0.92),
+      height: Math.min(150, Math.floor(viewfinderHeight * 0.3))
+    }),
+    aspectRatio: 1.777778,
+    disableFlip: true
   };
   bcScanner.start(
     { facingMode: 'environment' },
@@ -1171,9 +1182,12 @@ function startBcScan(){
   ).then(() => {
     id('bc-cam-btn').style.display='none';
     id('bc-stop-btn').style.display='inline-block';
+    id('bc-result').innerHTML='<div style="padding:10px;background:#ecfeff;border-radius:8px;color:var(--primary);font-size:12px;">CODE 128を優先して読み取り中です。バーコードを横向きに映してください。</div>';
   }).catch(e => {
     bcScanner = null;
-    toast('カメラを起動できません。番号を直接入力してください');
+    const reason=e?.name==='NotAllowedError'?'カメラの使用が許可されていません。Safariの設定でカメラを許可してください。':'カメラを起動できません。写真から読み取るか、番号を直接入力してください。';
+    id('bc-result').innerHTML=`<div style="padding:12px;background:#fef2f2;border-radius:8px;color:var(--danger);font-size:13px;">${reason}</div>`;
+    toast(reason);
   });
 }
 
@@ -1190,7 +1204,11 @@ function stopBcScan(){
 function onBcPhotoSelect(e){
   const file = e.target.files[0]; if(!file) return;
   id('bc-result').innerHTML='<div style="padding:12px;color:var(--muted);font-size:13px;">解析中...</div>';
-  const scanner = new Html5Qrcode('bc-temp-div');
+  if(typeof Html5Qrcode === 'undefined'){
+    id('bc-result').innerHTML='<div style="padding:12px;background:#fef2f2;border-radius:8px;color:var(--danger);font-size:13px;">読取ライブラリを読み込めませんでした。通信状態を確認してください。</div>';
+    return;
+  }
+  const scanner = new Html5Qrcode('bc-temp-div', { formatsToSupport: BC_FORMATS }, false);
   scanner.scanFile(file, true).then(result => {
     lookupBarcode(result);
   }).catch(() => {
@@ -1200,11 +1218,11 @@ function onBcPhotoSelect(e){
 }
 
 function lookupBarcode(value){
-  const v=(value||'').trim(); if(!v) return;
+  const raw=(value||'').trim(), v=normalizeBarcode(raw); if(!v) return;
   // 読み取り音（UI フィードバック）
-  const match=Object.entries(parts).find(([k,p])=>String(p.no||'').trim()===v);
+  const match=Object.entries(parts).find(([k,p])=>normalizeBarcode(p.barcode)===v||normalizeBarcode(p.no)===v);
   if(!match){
-    id('bc-result').innerHTML=`<div style="padding:12px;background:#fef2f2;border-radius:8px;color:var(--danger);font-size:13px;">「${esc(v)}」に一致する部品が見つかりません</div>`;
+    id('bc-result').innerHTML=`<div style="padding:12px;background:#fef2f2;border-radius:8px;color:var(--danger);font-size:13px;">「${esc(raw)}」の読み取りには成功しましたが、一致する部品がありません。部品の編集画面でこの値を「バーコード番号」に登録してください。</div>`;
     return;
   }
   const [key,p]=match;
@@ -1212,7 +1230,7 @@ function lookupBarcode(value){
   id('bc-result').innerHTML=`
     <div style="border:1px solid var(--border);border-radius:10px;padding:14px;">
       <div style="font-weight:700;margin-bottom:2px;">${esc(p.name)}</div>
-      <div style="font-family:monospace;font-size:12px;color:var(--muted);margin-bottom:10px;">${esc(p.no||'')}</div>
+      <div style="font-family:monospace;font-size:12px;color:var(--muted);margin-bottom:10px;">部品番号: ${esc(p.no||'—')}${p.barcode?`<br>バーコード: ${esc(p.barcode)}`:''}</div>
       <div class="loc-chips" style="margin-bottom:12px;">${LOCS.map(l=>`<span class="loc-chip ${(locs[l]||0)>0?'has':''}">${l}: ${locs[l]||0}</span>`).join('')}</div>
       <div style="display:flex;gap:8px;">
         <button class="btn btn-success" style="flex:1;" onclick="closeOv('ov-bc');openStock('${key}')">在庫を変更</button>
