@@ -506,7 +506,7 @@ function connect() {
   const sbUrl=id('f-sb-url').value.trim(), sbKey=id('f-sb-key').value.trim();
   if(sbUrl) localStorage.setItem('sb_url', sbUrl);
   if(sbKey) localStorage.setItem('sb_key', sbKey);
-  localStorage.setItem('inv_cfg', JSON.stringify(cfg));
+  localStorage.setItem('franke_inv_cfg', JSON.stringify(cfg));
   initFB(cfg);
 }
 function initFB(cfg) {
@@ -529,9 +529,9 @@ function initFB(cfg) {
     }).catch(e => { showErr('認証エラー: '+e.message); });
   } catch(e) { showErr('接続エラー: '+e.message); }
 }
-function doLogout() { if(confirm('設定画面に戻りますか？')){localStorage.removeItem('inv_cfg');location.reload();} }
+function doLogout() { if(confirm('設定画面に戻りますか？')){localStorage.removeItem('franke_inv_cfg');location.reload();} }
 function tryAutoConnect(){
-  const saved=localStorage.getItem('inv_cfg');
+  const saved=localStorage.getItem('franke_inv_cfg');
   if(!saved) return;
   try{
     const c=JSON.parse(saved);
