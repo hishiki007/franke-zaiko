@@ -474,8 +474,22 @@ let supabaseUrl='', supabaseKey='';
 const PHOTO_BUCKET='parts-photos';
 let photoPartKey=null;
 
-let OPERATORS = JSON.parse(localStorage.getItem('operators_v1')||'["シンワ倉庫","青木","平松"]');
-let currentOperator = localStorage.getItem('current_operator')||null;
+// 旧共通キーからフランケ専用キーへ初回のみ移行（旧キーはメリタ版のため残す）
+[
+  ['operators_v1','franke_operators_v1'],
+  ['current_operator','franke_current_operator'],
+  ['anthropic_key','franke_anthropic_key'],
+  ['sb_url','franke_sb_url'],
+  ['sb_key','franke_sb_key']
+].forEach(([oldKey,newKey])=>{
+  if(localStorage.getItem(newKey)===null){
+    const oldValue=localStorage.getItem(oldKey);
+    if(oldValue!==null) localStorage.setItem(newKey,oldValue);
+  }
+});
+
+let OPERATORS = JSON.parse(localStorage.getItem('franke_operators_v1')||'["シンワ倉庫","青木","平松"]');
+let currentOperator = localStorage.getItem('franke_current_operator')||null;
 function openOperatorModal(){ renderOperatorList(); open_('ov-operator'); }
 function renderOperatorList(){
   id('operator-list').innerHTML = OPERATORS.map((name,i)=>`
@@ -486,7 +500,7 @@ function renderOperatorList(){
 }
 function selectOperator(name){
   currentOperator=name;
-  localStorage.setItem('current_operator',name);
+  localStorage.setItem('franke_current_operator',name);
   id('cur-op-label').textContent=name;
   closeOv('ov-operator');
 }
@@ -494,7 +508,7 @@ function renameOperator(i){
   const nn=prompt('名前を編集',OPERATORS[i]);
   if(nn&&nn.trim()){
     const old=OPERATORS[i]; OPERATORS[i]=nn.trim();
-    localStorage.setItem('operators_v1',JSON.stringify(OPERATORS));
+    localStorage.setItem('franke_operators_v1',JSON.stringify(OPERATORS));
     if(currentOperator===old) selectOperator(OPERATORS[i]);
     renderOperatorList();
   }
@@ -506,10 +520,10 @@ function connect() {
   const cfg = { apiKey:id('f-key').value.trim(), authDomain:id('f-auth').value.trim(), databaseURL:id('f-db').value.trim(), projectId:id('f-pid').value.trim() };
   if (!cfg.apiKey||!cfg.databaseURL||!cfg.projectId) { showErr('API Key、Database URL、Project ID は必須です'); return; }
   const anthropicKey=id('f-anthropic').value.trim();
-  if(anthropicKey) localStorage.setItem('anthropic_key', anthropicKey);
+  if(anthropicKey) localStorage.setItem('franke_anthropic_key', anthropicKey);
   const sbUrl=id('f-sb-url').value.trim(), sbKey=id('f-sb-key').value.trim();
-  if(sbUrl) localStorage.setItem('sb_url', sbUrl);
-  if(sbKey) localStorage.setItem('sb_key', sbKey);
+  if(sbUrl) localStorage.setItem('franke_sb_url', sbUrl);
+  if(sbKey) localStorage.setItem('franke_sb_key', sbKey);
   localStorage.setItem('franke_inv_cfg', JSON.stringify(cfg));
   initFB(cfg);
 }
@@ -527,8 +541,8 @@ function initFB(cfg) {
       });
       id('setup').style.display='none';
       id('app').style.display='block';
-      if(localStorage.getItem('anthropic_key')) id('scan-btn').style.display='inline-block';
-      const sbUrl2=localStorage.getItem('sb_url'), sbKey2=localStorage.getItem('sb_key');
+      if(localStorage.getItem('franke_anthropic_key')) id('scan-btn').style.display='inline-block';
+      const sbUrl2=localStorage.getItem('franke_sb_url'), sbKey2=localStorage.getItem('franke_sb_key');
       if(sbUrl2 && sbKey2){ supabaseUrl=sbUrl2.replace(/\/$/,''); supabaseKey=sbKey2; }
     }).catch(e => { showErr('認証エラー: '+e.message); });
   } catch(e) { showErr('接続エラー: '+e.message); }
@@ -543,9 +557,9 @@ function tryAutoConnect(){
     id('f-auth').value=c.authDomain||'';
     id('f-db').value=c.databaseURL||'';
     id('f-pid').value=c.projectId||'';
-    const ak=localStorage.getItem('anthropic_key'); if(ak) id('f-anthropic').value=ak;
-    const sbU=localStorage.getItem('sb_url'); if(sbU) id('f-sb-url').value=sbU;
-    const sbK=localStorage.getItem('sb_key'); if(sbK) id('f-sb-key').value=sbK;
+    const ak=localStorage.getItem('franke_anthropic_key'); if(ak) id('f-anthropic').value=ak;
+    const sbU=localStorage.getItem('franke_sb_url'); if(sbU) id('f-sb-url').value=sbU;
+    const sbK=localStorage.getItem('franke_sb_key'); if(sbK) id('f-sb-key').value=sbK;
     if(typeof firebase==='undefined'){
       setTimeout(tryAutoConnect, 300);
       return;
@@ -949,7 +963,7 @@ function onScanFileSelect(e){
 }
 
 async function doScanAnalyze(){
-  const apiKey=localStorage.getItem('anthropic_key');
+  const apiKey=localStorage.getItem('franke_anthropic_key');
   if(!apiKey){ toast('APIキーが設定されていません。設定画面から再接続してください。'); return; }
   if(!scanImageBase64){ toast('画像を選択してください'); return; }
 
@@ -1246,7 +1260,7 @@ function fmtDate(ts){if(!ts)return'—';const d=new Date(ts);return d.toLocaleSt
 function today(){const d=new Date();return`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;}
 function open_(ovId){id(ovId).classList.add('open');}
 function openApiKeyModal(){
-  const cur=localStorage.getItem('anthropic_key')||'';
+  const cur=localStorage.getItem('franke_anthropic_key')||'';
   const inp=id('apikey-input');
   inp.value=cur;
   const st=id('apikey-status');
@@ -1257,9 +1271,9 @@ function openApiKeyModal(){
 }
 function saveApiKey(){
   const val=id('apikey-input').value.trim();
-  if(!val){localStorage.removeItem('anthropic_key');toast('🔑 APIキーを削除しました');closeOv('ov-apikey');return;}
+  if(!val){localStorage.removeItem('franke_anthropic_key');toast('🔑 APIキーを削除しました');closeOv('ov-apikey');return;}
   if(!val.startsWith('sk-ant-')){toast('⚠️ キーの形式が正しくありません（sk-ant-で始まる必要があります）');return;}
-  localStorage.setItem('anthropic_key',val);
+  localStorage.setItem('franke_anthropic_key',val);
   toast('✅ APIキーを保存しました');
   closeOv('ov-apikey');
 }
