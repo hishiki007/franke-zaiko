@@ -14,6 +14,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <!-- html5-qrcode: QRコード＋1次元バーコード両対応 -->
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -174,7 +175,7 @@ tr:hover td { background: #f8fafc; }
     <span class="dot" id="dot"></span>
     <button class="btn btn-ghost btn-sm" onclick="openOperatorModal()">👤 <span id="cur-op-label">未選択</span></button>
     <button class="btn btn-ghost btn-sm" onclick="toggleHist()">全履歴</button>
-    <button class="btn btn-ghost btn-sm" onclick="openApiKeyModal()">🔑</button>
+    <button class="btn btn-ghost btn-sm" onclick="toggleAiAuth()" id="ai-auth-btn">AIログイン</button>
     <button class="btn btn-ghost btn-sm" onclick="doLogout()">設定</button>
   </div>
 </header>
@@ -187,7 +188,6 @@ tr:hover td { background: #f8fafc; }
     <div class="field"><label>Auth Domain</label><input id="f-auth" placeholder="xxx.firebaseapp.com" value="franke-zaiko.firebaseapp.com" /></div>
     <div class="field"><label>Database URL</label><input id="f-db" placeholder="https://xxx.firebasedatabase.app" value="https://franke-zaiko-default-rtdb.asia-southeast1.firebasedatabase.app" /></div>
     <div class="field"><label>Project ID</label><input id="f-pid" placeholder="your-project-id" value="franke-zaiko" /></div>
-    <div class="field"><label>Anthropic API Key（納品書スキャン用・任意）</label><input id="f-anthropic" placeholder="sk-ant-api03-..." type="password" /></div>
     <div class="field"><label>Supabase URL（写真保存用・任意）</label><input id="f-sb-url" placeholder="https://xxxx.supabase.co" /></div>
     <div class="field"><label>Supabase Anon Key（写真保存用・任意）</label><input id="f-sb-key" placeholder="eyJ..." type="password" /></div>
     <button class="btn btn-primary" style="width:100%;padding:11px;margin-top:4px;" onclick="connect()">接続して開始 →</button>
@@ -368,7 +368,7 @@ tr:hover td { background: #f8fafc; }
       <div style="font-size:40px;">📄</div>
       <div style="font-size:13px;color:var(--muted);margin-top:4px;">納品書の写真を選択してください</div>
     </div>
-    <input type="file" id="scan-file" accept="image/*" onchange="onScanFileSelect(event)"
+    <input type="file" id="scan-file" accept="image/jpeg,image/png,image/webp" onchange="onScanFileSelect(event)"
       style="display:block;width:100%;margin-top:10px;padding:12px;border:2px dashed var(--border);border-radius:10px;background:var(--bg);font-size:14px;cursor:pointer;color:var(--text);" />
     <div id="scan-img-preview" style="margin-top:10px;text-align:center;display:none;">
       <img id="scan-img-el" style="max-width:100%;max-height:200px;border-radius:8px;object-fit:contain;" />
@@ -423,18 +423,6 @@ tr:hover td { background: #f8fafc; }
   </div>
 </div>
 
-<div class="overlay" id="ov-apikey" onclick="closeOv('ov-apikey',event)">
-  <div class="modal-card" onclick="event.stopPropagation()">
-    <h3 style="margin-bottom:12px;">🔑 Anthropic APIキー設定</h3>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">AIスキャン機能に使用します。キーはこの端末のみに保存され、外部には送信されません。</p>
-    <input type="password" id="apikey-input" placeholder="sk-ant-api03-..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px;">
-    <div id="apikey-status" style="font-size:13px;margin-bottom:12px;"></div>
-    <div style="display:flex;gap:8px;">
-      <button class="btn btn-primary" style="flex:1;" onclick="saveApiKey()">保存</button>
-      <button class="btn btn-outline" style="flex:1;" onclick="closeOv('ov-apikey')">キャンセル</button>
-    </div>
-  </div>
-</div>
 <!-- バーコードスキャン -->
 <div class="overlay" id="ov-bc" onclick="closeOv('ov-bc',event)">
   <div class="modal" style="max-width:420px;">
@@ -474,11 +462,21 @@ let supabaseUrl='', supabaseKey='';
 const PHOTO_BUCKET='parts-photos';
 let photoPartKey=null;
 
-// 旧共通キーからフランケ専用キーへ初回のみ移行（旧キーはメリタ版のため残す）
+// 共通AIは既存在庫Firebaseとは別の名前付きアプリとして初期化する。
+const COMMON_AI_APP_NAME='shinwa-common-ai';
+const COMMON_AI_CONFIG={
+  apiKey:'AIzaSyBaVsXJZ29o6Mn-AKsgCscXmUY-DyJqzzI',
+  authDomain:'shinwa-service-ai-dev.firebaseapp.com',
+  projectId:'shinwa-service-ai-dev',
+  appId:'1:490107212638:web:41da38cae7f501cd0b35cf',
+  messagingSenderId:'490107212638'
+};
+let commonAiApp=null, commonAiAuth=null, analyzeInvoiceCallable=null;
+
+// 旧共通キーからフランケ専用キーへ初回のみ移行（Anthropicキーは移行しない）
 [
   ['operators_v1','franke_operators_v1'],
   ['current_operator','franke_current_operator'],
-  ['anthropic_key','franke_anthropic_key'],
   ['sb_url','franke_sb_url'],
   ['sb_key','franke_sb_key']
 ].forEach(([oldKey,newKey])=>{
@@ -487,6 +485,9 @@ let photoPartKey=null;
     if(oldValue!==null) localStorage.setItem(newKey,oldValue);
   }
 });
+
+// フランケ版の旧ブラウザAPIキーだけを削除する。メリタ版のanthropic_keyは残す。
+localStorage.removeItem('franke_anthropic_key');
 
 let OPERATORS = JSON.parse(localStorage.getItem('franke_operators_v1')||'["シンワ倉庫","青木","平松"]');
 let currentOperator = localStorage.getItem('franke_current_operator')||null;
@@ -519,19 +520,18 @@ function connect() {
   if(typeof firebase==='undefined'){ showErr('Firebase読み込み中です。少し待ってから再度押してください。'); return; }
   const cfg = { apiKey:id('f-key').value.trim(), authDomain:id('f-auth').value.trim(), databaseURL:id('f-db').value.trim(), projectId:id('f-pid').value.trim() };
   if (!cfg.apiKey||!cfg.databaseURL||!cfg.projectId) { showErr('API Key、Database URL、Project ID は必須です'); return; }
-  const anthropicKey=id('f-anthropic').value.trim();
-  if(anthropicKey) localStorage.setItem('franke_anthropic_key', anthropicKey);
   const sbUrl=id('f-sb-url').value.trim(), sbKey=id('f-sb-key').value.trim();
   if(sbUrl) localStorage.setItem('franke_sb_url', sbUrl);
   if(sbKey) localStorage.setItem('franke_sb_key', sbKey);
   localStorage.setItem('franke_inv_cfg', JSON.stringify(cfg));
   initFB(cfg);
 }
-function initFB(cfg) {
+async function initFB(cfg) {
   try {
-    if (firebase.apps.length) firebase.app().delete().catch(()=>{});
+    const defaultApp=firebase.apps.find(app=>app.name==='[DEFAULT]');
+    if(defaultApp) await defaultApp.delete();
     firebase.initializeApp(cfg);
-    firebase.auth().signInAnonymously().then(() => {
+    await firebase.auth().signInAnonymously();
       db = firebase.database();
       db.ref('.info/connected').on('value', s => { id('dot').className='dot'+(s.val()?'':' off'); });
       db.ref('parts').on('value', s => { parts=s.val()||{}; render(); updateTabs(); fillTrParts(); });
@@ -541,10 +541,10 @@ function initFB(cfg) {
       });
       id('setup').style.display='none';
       id('app').style.display='block';
-      if(localStorage.getItem('franke_anthropic_key')) id('scan-btn').style.display='inline-block';
+      id('scan-btn').style.display='inline-block';
       const sbUrl2=localStorage.getItem('franke_sb_url'), sbKey2=localStorage.getItem('franke_sb_key');
       if(sbUrl2 && sbKey2){ supabaseUrl=sbUrl2.replace(/\/$/,''); supabaseKey=sbKey2; }
-    }).catch(e => { showErr('認証エラー: '+e.message); });
+
   } catch(e) { showErr('接続エラー: '+e.message); }
 }
 function doLogout() { if(confirm('設定画面に戻りますか？')){localStorage.removeItem('franke_inv_cfg');location.reload();} }
@@ -557,7 +557,6 @@ function tryAutoConnect(){
     id('f-auth').value=c.authDomain||'';
     id('f-db').value=c.databaseURL||'';
     id('f-pid').value=c.projectId||'';
-    const ak=localStorage.getItem('franke_anthropic_key'); if(ak) id('f-anthropic').value=ak;
     const sbU=localStorage.getItem('franke_sb_url'); if(sbU) id('f-sb-url').value=sbU;
     const sbK=localStorage.getItem('franke_sb_key'); if(sbK) id('f-sb-key').value=sbK;
     if(typeof firebase==='undefined'){
@@ -568,6 +567,73 @@ function tryAutoConnect(){
   }catch(e){}
 }
 tryAutoConnect();
+
+function initCommonAi(){
+  try{
+    commonAiApp=firebase.apps.find(app=>app.name===COMMON_AI_APP_NAME)||firebase.initializeApp(COMMON_AI_CONFIG,COMMON_AI_APP_NAME);
+    commonAiAuth=commonAiApp.auth();
+    analyzeInvoiceCallable=commonAiApp.functions('asia-northeast1').httpsCallable('analyzeInvoice');
+    commonAiAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
+    commonAiAuth.onAuthStateChanged(updateAiAuthUi);
+  }catch(e){
+    updateAiAuthUi(null);
+    console.error('共通AI Firebaseの初期化に失敗しました');
+  }
+}
+
+function updateAiAuthUi(user){
+  const btn=id('ai-auth-btn'); if(!btn) return;
+  if(user){
+    const label=user.email||user.displayName||'AIログアウト';
+    btn.textContent='AI: '+label;
+    btn.title='クリックするとAIからログアウトします';
+  }else{
+    btn.textContent='AIログイン';
+    btn.title='Googleアカウントで共通AIへログインします';
+  }
+}
+
+async function toggleAiAuth(){
+  if(!commonAiAuth){toast('共通AIの初期化に失敗しました');return;}
+  try{
+    if(commonAiAuth.currentUser){
+      if(confirm('共通AIからログアウトしますか？')) await commonAiAuth.signOut();
+      return;
+    }
+    await commonAiAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    toast('✅ 共通AIへログインしました');
+  }catch(e){
+    toast(formatAiError(e));
+  }
+}
+
+async function ensureAiSignedIn(){
+  if(!commonAiAuth||!analyzeInvoiceCallable) throw {code:'ai/not-initialized'};
+  if(commonAiAuth.currentUser) return commonAiAuth.currentUser;
+  const result=await commonAiAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+  return result.user;
+}
+
+function formatAiError(error){
+  const code=String(error&&error.code||'').replace(/^functions\//,'');
+  const messages={
+    unauthenticated:'Googleログインが必要です',
+    'permission-denied':'このアカウントにはフランケ・シンワ拠点の利用権限がありません',
+    'invalid-argument':'画像または送信内容が正しくありません',
+    'resource-exhausted':'AI解析の利用上限に達しました。しばらく待ってからお試しください',
+    'already-exists':'この解析リクエストはすでに処理されています',
+    'deadline-exceeded':'AI解析がタイムアウトしました',
+    unavailable:'AI解析サービスへ接続できませんでした',
+    internal:'AI解析結果を処理できませんでした',
+    'ai/not-initialized':'共通AIを初期化できませんでした',
+    'auth/popup-closed-by-user':'Googleログインがキャンセルされました',
+    'auth/popup-blocked':'Googleログイン画面を開けませんでした。ポップアップを許可してください',
+    'auth/unauthorized-domain':'このドメインはGoogleログインに許可されていません'
+  };
+  return messages[code]||'AI解析中にエラーが発生しました';
+}
+
+initCommonAi();
 
 function setLocTab(el,loc){document.querySelectorAll('.loc-tab').forEach(t=>t.classList.remove('active'));el.classList.add('active');curLoc=loc;id('th-loc').textContent=loc==='all'?'保管場所 / 数量':loc+' の数量';render();}
 function updateTabs(){
@@ -934,13 +1000,20 @@ function exportExcel(){
 
 // ====== 納品書スキャン ======
 let scanImageBase64 = null, scanImageMime = null, scanParsedItems = [];
+const SCAN_ALLOWED_MIME_TYPES=['image/jpeg','image/png','image/webp'];
+const SCAN_MAX_IMAGE_BYTES=5*1024*1024;
 
-function openScan(){
-  scanImageBase64=null; scanImageMime=null; scanParsedItems=[];
-  id('scan-analyze-area').style.display='none';
+function resetScanAnalysisState(){
+  scanParsedItems=[];
   id('scan-results').innerHTML='';
   id('scan-confirm-btn').style.display='none';
   if(id('scan-memo-div')) id('scan-memo-div').style.display='none';
+}
+
+function openScan(){
+  scanImageBase64=null; scanImageMime=null;
+  id('scan-analyze-area').style.display='none';
+  resetScanAnalysisState();
   id('scan-img-preview').style.display='none';
   id('scan-file').value='';
   open_('ov-scan');
@@ -948,10 +1021,28 @@ function openScan(){
 
 function onScanFileSelect(e){
   const file=e.target.files[0]; if(!file) return;
-  scanImageMime=file.type||'image/jpeg';
+  resetScanAnalysisState();
+  scanImageBase64=null; scanImageMime=null;
+  id('scan-analyze-area').style.display='none';
+  id('scan-img-preview').style.display='none';
+  if(!SCAN_ALLOWED_MIME_TYPES.includes(file.type)){
+    e.target.value='';
+    id('scan-results').innerHTML='<div style="color:var(--danger);padding:12px;background:#fef2f2;border-radius:8px;">JPEG、PNG、WebP形式の画像を選択してください</div>';
+    return;
+  }
+  if(file.size>SCAN_MAX_IMAGE_BYTES){
+    e.target.value='';
+    id('scan-results').innerHTML='<div style="color:var(--danger);padding:12px;background:#fef2f2;border-radius:8px;">画像サイズは5MB以下にしてください</div>';
+    return;
+  }
+  scanImageMime=file.type;
   const reader=new FileReader();
   reader.onload=function(ev){
-    scanImageBase64=ev.target.result.split(',')[1];
+    scanImageBase64=String(ev.target.result||'').split(',')[1]||null;
+    if(!scanImageBase64){
+      id('scan-results').innerHTML='<div style="color:var(--danger);padding:12px;background:#fef2f2;border-radius:8px;">画像を読み込めませんでした</div>';
+      return;
+    }
     id('scan-img-el').src=ev.target.result;
     id('scan-img-preview').style.display='block';
     id('scan-analyze-area').style.display='block';
@@ -963,57 +1054,54 @@ function onScanFileSelect(e){
 }
 
 async function doScanAnalyze(){
-  const apiKey=localStorage.getItem('franke_anthropic_key');
-  if(!apiKey){ toast('APIキーが設定されていません。設定画面から再接続してください。'); return; }
   if(!scanImageBase64){ toast('画像を選択してください'); return; }
+  if(!SCAN_ALLOWED_MIME_TYPES.includes(scanImageMime)){toast('JPEG、PNG、WebP形式の画像を選択してください');return;}
+  const imageBytes=Math.floor(scanImageBase64.length*3/4)-(scanImageBase64.endsWith('==')?2:scanImageBase64.endsWith('=')?1:0);
+  if(imageBytes<=0){toast('画像を読み込めませんでした');return;}
+  if(imageBytes>SCAN_MAX_IMAGE_BYTES){toast('画像サイズは5MB以下にしてください');return;}
+
+  resetScanAnalysisState();
 
   const btn=id('scan-analyze-btn');
   btn.disabled=true; btn.textContent='🤖 解析中...';
   id('scan-results').innerHTML='<div style="text-align:center;padding:16px;color:var(--muted);">AIが納品書を読み取っています...</div>';
 
   try {
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{
-        'x-api-key':apiKey,
-        'anthropic-version':'2023-06-01',
-        'content-type':'application/json',
-        'anthropic-dangerous-direct-browser-access':'true'
-      },
-      body:JSON.stringify({
-        model:'claude-haiku-4-5',
-        max_tokens:1024,
-        messages:[{
-          role:'user',
-          content:[
-            {type:'image',source:{type:'base64',media_type:scanImageMime,data:scanImageBase64}},
-            {type:'text',text:'この納品明細書から商品コード（部品番号）と数量を全て抽出してください。JSONのみ返してください（説明文不要）。形式: [{"code":"商品コード","qty":数量}]'}
-          ]
-        }]
-      })
+    await ensureAiSignedIn();
+    const result=await analyzeInvoiceCallable({
+      schemaVersion:1,
+      requestId:crypto.randomUUID(),
+      manufacturerId:'franke',
+      siteId:'shinwa',
+      mimeType:scanImageMime,
+      imageBase64:scanImageBase64
     });
-    if(!res.ok){const e=await res.json();throw new Error(e.error?.message||'API Error');}
-    const data=await res.json();
-    const text=data.content[0].text;
-    const match=text.match(/\[[\s\S]*?\]/);
-    if(!match) throw new Error('解析結果が読み取れませんでした');
-    scanParsedItems=JSON.parse(match[0]);
-    renderScanResults();
+    const response=result&&result.data;
+    if(!response||!Array.isArray(response.items)) throw {code:'functions/internal'};
+    scanParsedItems=response.items;
+    renderScanResults(Array.isArray(response.warnings)?response.warnings:[]);
   } catch(e){
-    id('scan-results').innerHTML=`<div style="color:var(--danger);padding:12px;background:#fef2f2;border-radius:8px;">エラー: ${esc(e.message)}</div>`;
+    resetScanAnalysisState();
+    id('scan-results').innerHTML=`<div style="color:var(--danger);padding:12px;background:#fef2f2;border-radius:8px;">${esc(formatAiError(e))}</div>`;
+  } finally {
+    btn.disabled=false; btn.textContent='🤖 AIで解析する';
   }
-  btn.disabled=false; btn.textContent='🤖 AIで解析する';
 }
 
-function renderScanResults(){
+function renderScanResults(warnings=[]){
   if(!scanParsedItems.length){
-    id('scan-results').innerHTML='<div style="text-align:center;padding:16px;color:var(--muted);">部品が検出されませんでした</div>';
+    scanParsedItems=[];
+    id('scan-confirm-btn').style.display='none';
+    if(id('scan-memo-div')) id('scan-memo-div').style.display='none';
+    const message=warnings[0]||'納品書から部品コードと数量を読み取れませんでした';
+    id('scan-results').innerHTML=`<div style="text-align:center;padding:16px;color:var(--warning);background:#fffbeb;border-radius:8px;">${esc(message)}</div>`;
     return;
   }
   const partsByNo={};
   Object.entries(parts).forEach(([k,p])=>{ if(p.no) partsByNo[String(p.no).trim()]=k; });
 
-  let html='<div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:8px;">検出された部品（チェックしたものを入庫）</div>';
+  let html=warnings.length?`<div style="padding:10px;margin-bottom:8px;color:var(--warning);background:#fffbeb;border-radius:8px;font-size:12px;">${warnings.map(esc).join('<br>')}</div>`:'';
+  html+='<div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:8px;">検出された部品（チェックしたものを入庫）</div>';
   scanParsedItems=scanParsedItems.map((item,i)=>{
     const matchKey=partsByNo[String(item.code).trim()];
     const matchPart=matchKey?parts[matchKey]:null;
@@ -1259,24 +1347,6 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 function fmtDate(ts){if(!ts)return'—';const d=new Date(ts);return d.toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});}
 function today(){const d=new Date();return`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;}
 function open_(ovId){id(ovId).classList.add('open');}
-function openApiKeyModal(){
-  const cur=localStorage.getItem('franke_anthropic_key')||'';
-  const inp=id('apikey-input');
-  inp.value=cur;
-  const st=id('apikey-status');
-  st.textContent=cur?'✅ 現在キーが設定されています':'⚠️ キーが未設定です（AIスキャン機能は使用できません）';
-  st.style.color=cur?'var(--success)':'var(--warning)';
-  open_('ov-apikey');
-  setTimeout(()=>inp.focus(),100);
-}
-function saveApiKey(){
-  const val=id('apikey-input').value.trim();
-  if(!val){localStorage.removeItem('franke_anthropic_key');toast('🔑 APIキーを削除しました');closeOv('ov-apikey');return;}
-  if(!val.startsWith('sk-ant-')){toast('⚠️ キーの形式が正しくありません（sk-ant-で始まる必要があります）');return;}
-  localStorage.setItem('franke_anthropic_key',val);
-  toast('✅ APIキーを保存しました');
-  closeOv('ov-apikey');
-}
 function closeOv(ovId,e){
   if(!e||e.target===id(ovId)){
     id(ovId).classList.remove('open');
